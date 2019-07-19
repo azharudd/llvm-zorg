@@ -1,0 +1,87 @@
+pipeline {
+    agent { label 'master' }
+
+    parameters {
+        string(name: 'GIT_SHA', defaultValue: 'HEAD', description: 'description')
+        string(name: 'ARTIFACT', defaultValue: 'mr-clang-stage1-RA/latest', description: 'description')
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                dir('llvm-project') {
+                    //git 'https://github.com/llvm/llvm-project.git'
+                    git 'http://labmaster3.local/git/llvm/llvm-project.git'
+                }
+                dir('llvm-zorg') {
+                    //git 'https://github.com/llvm/llvm-zorg.git'
+                    git 'https://github.com/azharudd/llvm-zorg.git'
+                }
+            }
+        }
+        stage('Build') {
+            steps {
+                timeout(90) {
+                    sh '''
+                    set -u
+                    rm -rf build.properties
+
+                    cd llvm-project
+                    git tag -a -m "First Commit" first_commit 97724f18c79c7cc81ced24239eb5e883bf1398ef || true
+
+                    git_desc=$(git describe --match "first_commit")
+
+                    export GIT_DISTANCE=$(echo ${git_desc} | cut -f 2 -d "-")
+
+                    sha=$(echo ${git_desc} | cut -f 3 -d "-")
+                    export GIT_SHA=${sha:1}
+
+                    cd -
+
+                    export PATH=$PATH:/usr/bin:/usr/local/bin
+
+                    rm -rfv clang-build clang-install
+
+                    python llvm-zorg/zorg/jenkins/monorepo_build.py fetch
+                    python llvm-zorg/zorg/jenkins/monorepo_build.py clang build --thinlto --projects="clang;clang-tools-extra;compiler-rt;libcxx;debuginfo-tests" --cmake-flag="-DLIBCXX_ENABLE_SHARED=OFF" --cmake-flag="-DLIBCXX_ENABLE_STATIC=OFF"
+                    '''
+                }
+            }
+        }
+
+        stage('Test') {
+            steps {
+                timeout(90) {
+                    sh '''
+                    set -u
+                    export PATH=$PATH:/usr/bin:/usr/local/bin
+
+                    rm -rf clang-build/testresults.xunit.xml
+
+                    python llvm-zorg/zorg/jenkins/monorepo_build.py clang test
+                    '''
+                }
+                junit 'clang-build/testresults.xunit.xml'
+            }
+        }
+    }
+    post {
+        always {	
+            scanForIssues tool: clang()
+        }
+        /*failure {
+            emailext subject: '$DEFAULT_SUBJECT',
+                    presendScript: '$DEFAULT_PRESEND_SCRIPT',
+                    postsendScript: '$DEFAULT_POSTSEND_SCRIPT',
+                    recipientProviders: [
+                            [$class: 'CulpritsRecipientProvider'],
+                            [$class: 'DevelopersRecipientProvider'],
+                            [$class: 'RequesterRecipientProvider'],
+                    ],
+                    replyTo: '$DEFAULT_REPLYTO',
+                    to: 'chris.matthews@apple.com',
+                    body:'$DEFAULT_CONTENT'
+
+        }*/
+    }
+}
