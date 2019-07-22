@@ -321,12 +321,12 @@ def clang_builder(target):
             cmake_cachefile = '{}/clang/cmake/caches/Apple-stage2{}.cmake'.format(
                                        conf.srcdir(), cmake_cachefile_thinlto)
 
-            cmake_command = env + ["/usr/local/bin/cmake", '-G', 'Ninja', '-C',
-                                   cmake_cachefile,
+            cmake_command = env + ["/usr/local/bin/cmake", '-G', 'Ninja',
+                                   '-DLLVM_ENABLE_PROJECTS={}'.format(conf.llvm_enable_projects),
+                                   '-C', cmake_cachefile,
                                    '-DLLVM_ENABLE_ASSERTIONS:BOOL={}'.format(
                                        "TRUE" if conf.assertions else "FALSE"),
                                    '-DCMAKE_BUILD_TYPE=RelWithDebInfo',
-                                   '-DLLVM_ENABLE_PROJECTS={}'.format(conf.llvm_enable_projects),
                                    '-DCMAKE_MAKE_PROGRAM=' + NINJA,
                                    '-DLLVM_VERSION_PATCH=99',
                                    '-DLLVM_VERSION_SUFFIX=""',
