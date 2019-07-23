@@ -1,8 +1,8 @@
 pipeline {
-    agent { label 'master' }
+    agent { label 'MacPro' }
 
     parameters {
-        string(name: 'GIT_SHA', defaultValue: 'HEAD', description: 'description')
+        string(name: 'GIT_REVISION', defaultValue: 'refs/heads/master', description: 'Git revision to build')
         string(name: 'ARTIFACT', defaultValue: 'mr-clang-stage1-RA/latest', description: 'description')
     }
     
@@ -10,8 +10,7 @@ pipeline {
         stage('Checkout') {
             steps {
                 dir('llvm-project') {
-                    //git 'https://github.com/llvm/llvm-project.git'
-                    git 'http://labmaster3.local/git/llvm/llvm-project.git'
+                    git branch: params.GIT_REVISION, url: 'https://github.com/llvm/llvm-project.git'
                 }
                 dir('llvm-zorg') {
                     //git 'https://github.com/llvm/llvm-zorg.git'
@@ -21,7 +20,7 @@ pipeline {
         }
         stage('Build') {
             steps {
-                timeout(90) {
+                timeout(300) {
                     sh '''
                     set -u
                     rm -rf build.properties
@@ -30,7 +29,6 @@ pipeline {
                     git tag -a -m "First Commit" first_commit 97724f18c79c7cc81ced24239eb5e883bf1398ef || true
 
                     git_desc=$(git describe --match "first_commit")
-
                     export GIT_DISTANCE=$(echo ${git_desc} | cut -f 2 -d "-")
 
                     sha=$(echo ${git_desc} | cut -f 3 -d "-")
@@ -38,12 +36,14 @@ pipeline {
 
                     cd -
 
+                    echo "ARTIFACT=$JOB_NAME/clang-d$GIT_DISTANCE-g$GIT_SHA-t$BUILD_ID-b$BUILD_NUMBER.tar.gz" > build.properties
+
                     export PATH=$PATH:/usr/bin:/usr/local/bin
 
-                    rm -rfv clang-build clang-install
+                    rm -rf clang-build clang-install *.tar.gz
 
                     python llvm-zorg/zorg/jenkins/monorepo_build.py fetch
-                    python llvm-zorg/zorg/jenkins/monorepo_build.py clang build --thinlto --projects="clang;clang-tools-extra;compiler-rt;libcxx;debuginfo-tests" --cmake-flag="-DLIBCXX_ENABLE_SHARED=OFF" --cmake-flag="-DLIBCXX_ENABLE_STATIC=OFF"
+                    python llvm-zorg/zorg/jenkins/monorepo_build.py clang build --thinlto --projects="clang;compiler-rt;libcxx;debuginfo-tests" --cmake-flag="-DLIBCXX_ENABLE_SHARED=OFF" --cmake-flag="-DLIBCXX_ENABLE_STATIC=OFF"
                     '''
                 }
             }
@@ -51,7 +51,7 @@ pipeline {
 
         stage('Test') {
             steps {
-                timeout(90) {
+                timeout(120) {
                     sh '''
                     set -u
                     export PATH=$PATH:/usr/bin:/usr/local/bin
@@ -83,5 +83,11 @@ pipeline {
                     body:'$DEFAULT_CONTENT'
 
         }*/
+        success {
+            script {
+                def props = readProperties(file: 'build.properties');
+                build job: 'upload_artifact', wait: false, parameters: [string(name: 'ARTIFACT', value: props.ARTIFACT)]
+            }
+        }
     }
 }
