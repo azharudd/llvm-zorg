@@ -3,19 +3,17 @@ pipeline {
     agent { label 'MacPro' }
     
     parameters {
-        string(name: 'GIT_REVISION', defaultValue: 'refs/heads/master', description: 'Git revision to build')
+        string(name: 'GIT_REVISION', defaultValue: '*/master', description: 'Git revision to build')
     }
 
     stages {
         stage('Checkout') {
             steps {
                 dir('llvm-project') {
-                    //git 'https://github.com/llvm/llvm-project.git'
-                    git branch: params.GIT_REVISION, url: 'http://labmaster3.local/git/llvm-project.git'
+                    checkout([$class: 'GitSCM', branches: [[name: params.GIT_REVISION]], userRemoteConfigs: [[url: 'http://labmaster3.local/git/llvm-project.git']]])
                 }
                 dir('llvm-zorg') {
-                    //git 'https://github.com/llvm/llvm-zorg.git'
-                    git 'http://labmaster3.local/git/llvm-zorg.git'
+                    checkout([$class: 'GitSCM', branches: [[name: '*/master']], userRemoteConfigs: [[url: 'http://labmaster3.local/git/llvm-zorg.git']]])
                 }
             }
         }

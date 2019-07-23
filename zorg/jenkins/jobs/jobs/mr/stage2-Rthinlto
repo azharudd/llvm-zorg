@@ -2,7 +2,7 @@ pipeline {
     agent { label 'MacPro' }
 
     parameters {
-        string(name: 'GIT_REVISION', defaultValue: 'refs/heads/master', description: 'Git revision to build')
+        string(name: 'GIT_REVISION', defaultValue: '*/master', description: 'Git revision to build')
         string(name: 'ARTIFACT', defaultValue: 'mr-clang-stage1-RA/latest', description: 'description')
     }
     
@@ -10,11 +10,11 @@ pipeline {
         stage('Checkout') {
             steps {
                 dir('llvm-project') {
-                    git branch: params.GIT_REVISION, url: 'https://github.com/llvm/llvm-project.git'
+                    checkout([$class: 'GitSCM', branches: [[name: params.GIT_REVISION]], userRemoteConfigs: [[url: 'https://github.com/llvm/llvm-project.git']]])
                 }
                 dir('llvm-zorg') {
-                    //git 'https://github.com/llvm/llvm-zorg.git'
-                    git 'https://github.com/azharudd/llvm-zorg.git'
+                    //checkout([$class: 'GitSCM', branches: [[name: '*/master']], userRemoteConfigs: [[url: 'https://github.com/llvm/llvm-zorg.git']]])
+                    checkout([$class: 'GitSCM', branches: [[name: '*/master']], userRemoteConfigs: [[url: 'https://github.com/azharudd/llvm-zorg.git']]])
                 }
             }
         }
