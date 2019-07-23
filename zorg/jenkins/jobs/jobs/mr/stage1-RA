@@ -1,22 +1,25 @@
 // TODO: parameters, throttle?, set build name, email, IRC
 pipeline {
     agent { label 'MacPro' }
+
+    parameters {
+        string(name: 'GIT_REVISION', defaultValue: 'refs/heads/master', description: 'Git revision to build')
+    }
+
     stages {
         stage('Checkout') {
             steps {
                 dir('llvm-project') {
-                    //git 'https://github.com/llvm/llvm-project.git'
-                    git 'http://labmaster3.local/git/llvm/llvm-project.git'
+                    git branch: params.GIT_REVISION, url: 'https://github.com/llvm/llvm-project.git'
                 }
                 dir('llvm-zorg') {
-                    git 'https://github.com/llvm/llvm-zorg.git'
+                    git url: 'https://github.com/llvm/llvm-zorg.git'
                 }
             }
         }
         stage('Build') {
             steps {
                 timeout(90) {
-
                     sh '''
                     set -u
                     rm -rf build.properties
@@ -25,7 +28,6 @@ pipeline {
                     git tag -a -m "First Commit" first_commit 97724f18c79c7cc81ced24239eb5e883bf1398ef || true
 
                     git_desc=$(git describe --match "first_commit")
-
                     export GIT_DISTANCE=$(echo ${git_desc} | cut -f 2 -d "-")
 
                     sha=$(echo ${git_desc} | cut -f 3 -d "-")
@@ -33,9 +35,13 @@ pipeline {
 
                     cd -
 
+                    echo "GIT_DISTANCE=$GIT_DISTANCE" > build.properties
+                    echo "GIT_SHA=$GIT_SHA" >> build.properties
+                    echo "ARTIFACT=$JOB_NAME/clang-d$GIT_DISTANCE-g$GIT_SHA-t$BUILD_ID-b$BUILD_NUMBER.tar.gz" >> build.properties
+
                     export PATH=$PATH:/usr/bin:/usr/local/bin
                     rm -rf clang-build clang-install *.tar.gz
-                    python llvm-zorg/zorg/jenkins/monorepo_build.py cmake build --assertions --cmake-type=RelWithDebInfo --projects="clang;clang-tools-extra;compiler-rt;debuginfo-tests;libcxx" --cmake-flag="-DLIBCXX_ENABLE_SHARED=OFF" --cmake-flag="-DLIBCXX_ENABLE_STATIC=OFF"
+                    python llvm-zorg/zorg/jenkins/monorepo_build.py cmake build --assertions --cmake-type=RelWithDebInfo --projects="clang;clang-tools-extra;compiler-rt;debuginfo-tests;libcxx;libcxxabi"
                     '''
                 }
             }
@@ -43,19 +49,18 @@ pipeline {
         stage('Test') {
             steps {
                 timeout(90) {
-
                     sh '''
                     set -u
                     export PATH=$PATH:/usr/bin:/usr/local/bin
-                    python llvm-zorg/zorg/jenkins/monorepo_build.py cmake testlong
+                    # python llvm-zorg/zorg/jenkins/monorepo_build.py cmake testlong
                     '''
                 }
-                junit 'clang-build/testresults.xunit.xml'
+                // junit 'clang-build/testresults.xunit.xml'
             }
         }
     }
     post {
-        always {	
+        always {
             scanForIssues tool: clang()
         }
         /*failure {
@@ -73,8 +78,12 @@ pipeline {
 
         }*/
         success {
+            script {
+                def props = readProperties(file: 'build.properties');
+                build job: 'upload_artifact', wait: false, parameters: [string(name: 'ARTIFACT', value: props.ARTIFACT)]
+            }
             build job: 'mr-clang-stage2-Rthinlto_relay', wait: false
-            build job: 'upload_artifact', wait: false
+            build job: 'mr-clang-stage2-cmake-RgSan_relay', wait: false
         }
     }
 }
