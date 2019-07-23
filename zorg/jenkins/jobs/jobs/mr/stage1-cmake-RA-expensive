@@ -1,0 +1,79 @@
+// TODO: properties, throttle?, node update, build schedule, email
+pipeline {
+    agent { label 'MacPro' }
+
+    parameters {
+        string(name: 'GIT_REVISION', defaultValue: '*/master', description: 'Git revision to build')
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                dir('llvm-project') {
+                    checkout([$class: 'GitSCM', branches: [[name: params.GIT_REVISION]], userRemoteConfigs: [[url: 'https://github.com/llvm/llvm-project.git']]])
+                }
+                dir('llvm-zorg') {
+                    checkout([$class: 'GitSCM', branches: [[name: '*/master']], userRemoteConfigs: [[url: 'https://github.com/llvm/llvm-zorg.git']]])
+                }
+            }
+        }
+        stage('Build') {
+            steps {
+                timeout(300) {
+                    sh '''
+                    set -u
+                    rm -rf build.properties
+
+                    cd llvm-project
+                    git tag -a -m "First Commit" first_commit 97724f18c79c7cc81ced24239eb5e883bf1398ef || true
+
+                    git_desc=$(git describe --match "first_commit")
+                    export GIT_DISTANCE=$(echo ${git_desc} | cut -f 2 -d "-")
+
+                    sha=$(echo ${git_desc} | cut -f 3 -d "-")
+                    export GIT_SHA=${sha:1}
+
+                    cd -
+
+                    export PATH=$PATH:/usr/bin:/usr/local/bin
+                    rm -rf clang-build clang-install *.tar.gz
+                    python llvm-zorg/zorg/jenkins/monorepo_build.py cmake all --assertions --cmake-flag='-DLLVM_ENABLE_EXPENSIVE_CHECKS=ON' --projects='clang;clang-tools-extra;compiler-rt;libcxx' --cmake-flag='-DLIBCXX_ENABLE_SHARED=OFF' --cmake-flag='-DLIBCXX_ENABLE_STATIC=OFF'
+                    '''
+                }
+            }
+        }
+        stage('Test') {
+            steps {
+                timeout(120) {
+                    sh '''
+                    set -u
+                    export PATH=$PATH:/usr/bin:/usr/local/bin
+
+                    cd clang-build
+                    export SANITIZER_IOSSIM_TEST_DEVICE_IDENTIFIER="iPhone 6"
+                    ./bin/llvm-lit -v --xunit-xml-output=asan-IOSSimX86_64Config.xunit.xml ./tools/clang/runtime/compiler-rt-bins/test/asan/IOSSimX86_64Config/
+                    ./bin/llvm-lit -v --xunit-xml-output=asan-IOSSimI386Config.xunit.xml ./tools/clang/runtime/compiler-rt-bins/test/asan/IOSSimI386Config/
+                    ./bin/llvm-lit -v --xunit-xml-output=tsan-IOSSimX86_64Config.xunit.xml ./tools/clang/runtime/compiler-rt-bins/test/tsan/IOSSimX86_64Config/
+                    '''
+                }
+                junit 'clang-build/testresults.xunit.xml,clang-build/asan-IOSSimX86_64Config.xunit.xml,clang-build/asan-IOSSimI386Config.xunit.xml,clang-build/tsan-IOSSimX86_64Config.xunit.xml'
+            }
+        }
+    }
+    /*post {
+        failure {
+            emailext subject: '$DEFAULT_SUBJECT',
+                    presendScript: '$DEFAULT_PRESEND_SCRIPT',
+                    postsendScript: '$DEFAULT_POSTSEND_SCRIPT',
+                    recipientProviders: [
+                            [$class: 'CulpritsRecipientProvider'],
+                            [$class: 'DevelopersRecipientProvider'],
+                            [$class: 'RequesterRecipientProvider'],
+                    ],
+                    replyTo: '$DEFAULT_REPLYTO',
+                    to: 'chris.matthews@apple.com',
+                    body:'$DEFAULT_CONTENT'
+
+        }
+    }*/
+}
