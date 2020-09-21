@@ -81,7 +81,7 @@ def task_pipeline(label, body) {
         try {
             stage('main') {
                 dir('config') {
-                    git url: 'https://github.com/azharudd/llvm-zorg.git', branch: 'master', poll: false
+                    git url: 'https://github.com/azharudd/llvm-zorg.git', branch: 'test-lnt', poll: false
                 }
                 body()
             }
